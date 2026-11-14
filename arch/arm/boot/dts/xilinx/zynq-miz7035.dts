@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * MIZ7035 (Zynq-7000 XC7Z035) board device tree
+ *
+ * 从 PetaLinux 生成的 system-top.dts 迁移而来：
+ *   - zynq-7000.dtsi      内核自带（PS 侧定义）
+ *   - pl.dtsi             XSA 生成的 PL 节点（ddr_to_image / image_to_ddr /
+ *                         switch_image / mig_7series）+ misc_clk_0
+ *   - pcw.dtsi            PS 外设使能与时钟（gem0 / qspi / sdhci / uart1 / usb0 ...）
+ *
+ * 与 PetaLinux 版本的差异（有意为之）：
+ *   1) memory 只声明 512MiB（0x0-0x1FFFFFFF）。原 PetaLinux 写的是 0x40000000
+ *      (1GiB)，但 zynq-zed 同类 Zynq 板与 MIZ7035 实际 DDR 均为 512MiB，
+ *      写成 1GiB 会让内核把 PL 侧/不存在的地址当普通内存分配，触发 OOM killer。
+ *   2) bootargs 里 root= 交给 U-Boot/extlinux 注入，这里只保留控制台与 earlycon。
+ *   3) 补上 eth0 MAC（板子固定 00:0a:35:00:1e:53）与 QSPI 分区表，
+ *      与 PetaLinux 一致，便于 sf/mtd 工具按 label 访问。
+ */
+/dts-v1/;
+#include "zynq-7000.dtsi"
+#include "pl-miz7035.dtsi"
+#include "pcw-miz7035.dtsi"
+
+/ {
+	model = "Miziotek MIZ7035 (Zynq-7000 XC7Z035)";
+	compatible = "miziotek,miz7035", "xlnx,zynq-7000";
+
+	aliases {
+		ethernet0 = &gem0;
+		i2c0 = &i2c0;
+		serial0 = &uart1;
+		spi0 = &qspi;
+		mmc0 = &sdhci1;
+		mmc1 = &sdhci0;
+	};
+
+	chosen {
+		bootargs = "console=ttyPS0,115200 earlycon";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x20000000>;
+	};
+
+	usb_phy0: phy0@e0002000 {
+		compatible = "ulpi-phy";
+		#phy-cells = <0>;
+		reg = <0xe0002000 0x1000>;
+		view-port = <0x0170>;
+		drv-vbus;
+	};
+};
+
+&gem0 {
+	local-mac-address = [00 0a 35 00 1e 53];
+	status = "okay";
+	phy-mode = "rgmii-id";
+	phy-handle = <&phy0>;
+
+	mdio {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		phy0: ethernet-phy@0 {
+			device_type = "ethernet-phy";
+			reg = <0>;
+		};
+	};
+};
+
+&qspi {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	flash0: flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "qspi-boot";
+				reg = <0x00000000 0x00500000>;
+				read-only;
+			};
+			partition@500000 {
+				label = "qspi-kernel";
+				reg = <0x00500000 0x00a80000>;
+			};
+			partition@f80000 {
+				label = "qspi-bootenv";
+				reg = <0x00f80000 0x00020000>;
+			};
+		};
+	};
+};
+
+&usb0 {
+	phy_type = "ulpi";
+	usb-reset = <&gpio0 46 0>;
+	status = "okay";
+};
+
+&usb_phy0 {
+	status = "okay";
+};
+
+/* SD0 = 板载 TF 卡槽；SD1 = eMMC（non-removable，根文件系统所在） */
+&sdhci0 {
+	status = "okay";
+};
+
+&sdhci1 {
+	status = "okay";
+	non-removable;
+	disable-wp;
+};
+
+/*
+ * tdp_mem：板级字符设备驱动（PL DDR / IP 寄存器 / 中断的窗口式访问）
+ * 与 PetaLinux 的 system-user.dtsi 完全一致：
+ *   reg[0] = 0x20000000 512MiB  PS DDR 用户区
+ *   reg[1] = 0x80000000 1GiB    PL DDR3（MIG）
+ *   reg[2] = 0x43C00000 4MiB    PL IP 寄存器
+ *   IRQ0..IRQ8 = GIC 29..37（对应 xlconcat In0..In8；当前 BD 只接了 In0）
+ */
+&amba_pl {
+	tdp_mem: tdp_mem@20000000 {
+		compatible = "xlnx,tdp_mem";
+		status = "okay";
+
+		reg = <0x20000000 0x20000000>,
+		      <0x80000000 0x40000000>,
+		      <0x43c00000 0x00400000>;
+
+		interrupt-parent = <&intc>;
+		interrupt-names = "IRQ0", "IRQ1", "IRQ2", "IRQ3", "IRQ4",
+				  "IRQ5", "IRQ6", "IRQ7", "IRQ8";
+		interrupts = <0 29 4>, <0 30 4>, <0 31 4>, <0 32 4>, <0 33 4>,
+			     <0 34 4>, <0 35 4>, <0 36 4>, <0 37 4>;
+	};
+};
