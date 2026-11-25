@@ -27,12 +27,6 @@
 			xlnx,s00-axi-addr-width = <0x6>;
 			xlnx,s00-axi-data-width = <0x20>;
 		};
-		mig_7series_0: mig_7series@80000000 {
-			clock-names = "clk_ref_i", "sys_clk_i";
-			clocks = <&misc_clk_0>, <&misc_clk_0>;
-			compatible = "xlnx,mig-7series-4.2";
-			reg = <0x80000000 0x40000000>;
-		};
 		switch_image_0: switch_image@43c20000 {
 			clock-names = "clk", "s00_axi_aclk";
 			clocks = <&clkc 15>, <&clkc 15>;
